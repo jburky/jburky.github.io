@@ -167,6 +167,7 @@ table caption {
 
 table {
     border-collapse: collapse;
+    margin: .5em;
 }
 
 td {
@@ -183,8 +184,7 @@ table:first-of-type {
 }
 
 table:last-of-type {
-    float: right;
-    padding-left: .5em;
+    float: left;
 }
 
 aside p:first-of-type {
