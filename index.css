@@ -191,3 +191,8 @@ aside p:first-of-type {
     font-weight: bold;
     font-size: 1.15em; 
 }
+
+footer {
+    padding: .25em;
+    text-align: center;
+}
