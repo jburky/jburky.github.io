@@ -17,11 +17,3 @@ body {
     font-weight: 600;
     font-size: 80px;
 }
-
-div div {
-    background-color: darkblue;
-}
-
-div div span {
-    color: white;
-}
