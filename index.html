@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>burky.io</title>
+  <link href="./real-shadow/main.css" rel="stylesheet">
   <link href="style.css" rel="stylesheet">
 </head>
 
@@ -11,6 +12,16 @@
   <div class="container">
     burky.io
   </div>
+
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <!-- <script src="http://cdnjs.cloudflare.com/ajax/libs/tilt.js/1.2.1/tilt.jquery.min.js"></script> -->
+  <script src="./real-shadow/realshadow-min.js"></script>
+  <script>
+    $('div').realshadow({
+      type: 'text',
+      color: '255,255,255'
+    });
+  </script>
 </body>
 
 </html>
