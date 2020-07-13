@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_demo/models/organization_model.dart';
 import 'package:flutter_demo/pages/home_page.dart';
 import 'package:provider/provider.dart';
 import 'package:theme_provider/theme_provider.dart';
