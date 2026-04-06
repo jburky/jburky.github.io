@@ -12,19 +12,84 @@
   const restartBtn = document.getElementById('restart');
   const muteBtn = document.getElementById('mute');
   const reloadBtn = document.getElementById('reload');
+  // Version check: HEAD game.js with cache-busting, compare ETag/Last-Modified
+  // to baseline captured at page load. Button has three states:
+  //   "subtle"       — on latest, dimmed (default)
+  //   "update-ready" — new version on host, glowing + warns before reload
+  let versionBaseline = null;
+  let updateAvailable = false;
+
+  async function fetchVersionHeaders() {
+    try {
+      const resp = await fetch('./game.js?t=' + Date.now(), {
+        method: 'HEAD',
+        cache: 'no-store',
+      });
+      if (!resp.ok) return null;
+      return resp.headers.get('etag') || resp.headers.get('last-modified') || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function setReloadState(state) {
+    if (!reloadBtn) return;
+    reloadBtn.classList.remove('subtle', 'update-ready');
+    if (state === 'update-ready') {
+      reloadBtn.classList.add('update-ready');
+      reloadBtn.textContent = '⬇';
+      reloadBtn.title = 'Update available — tap to reload';
+      reloadBtn.setAttribute('aria-label', 'Update available, tap to reload');
+    } else {
+      reloadBtn.classList.add('subtle');
+      reloadBtn.textContent = '⟳';
+      reloadBtn.title = 'On latest version';
+      reloadBtn.setAttribute('aria-label', 'On latest version, tap to force reload');
+    }
+  }
+
+  async function checkForUpdate() {
+    const current = await fetchVersionHeaders();
+    if (!current) return;
+    if (versionBaseline === null) {
+      versionBaseline = current;
+      return;
+    }
+    if (current !== versionBaseline && !updateAvailable) {
+      updateAvailable = true;
+      setReloadState('update-ready');
+    }
+  }
+
+  async function doReload() {
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (_) {}
+    location.href = location.pathname + '?v=' + Date.now();
+  }
+
   if (reloadBtn) {
+    setReloadState('subtle');
     reloadBtn.addEventListener('click', async () => {
-      try {
-        if ('serviceWorker' in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map((r) => r.unregister()));
-        }
-        if ('caches' in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map((k) => caches.delete(k)));
-        }
-      } catch (_) {}
-      location.href = location.pathname + '?v=' + Date.now();
+      if (updateAvailable) {
+        const ok = confirm(
+          'A new version of Gravity Wells is available.\n\nReload now? Your current run will be lost.'
+        );
+        if (!ok) return;
+      }
+      await doReload();
+    });
+    checkForUpdate();
+    setInterval(checkForUpdate, 60_000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) checkForUpdate();
     });
   }
   const dailySeedCheckbox = document.getElementById('daily-seed');

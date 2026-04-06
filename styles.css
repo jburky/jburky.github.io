@@ -78,6 +78,25 @@ button:focus-visible {
   outline: 2px solid #ffd479;
   outline-offset: 2px;
 }
+.icon-btn.subtle {
+  opacity: 0.35;
+  border-color: rgba(125, 249, 255, 0.2);
+}
+.icon-btn.update-ready {
+  color: #ffd479;
+  border-color: #ffd479;
+  background: rgba(255, 212, 121, 0.12);
+  animation: pulse-update 1.8s ease-in-out infinite;
+}
+@keyframes pulse-update {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 212, 121, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 212, 121, 0);
+  }
+}
 .panel {
   position: fixed;
   inset: 0;
