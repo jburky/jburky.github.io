@@ -1,38 +1,379 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="/">
-
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="dump">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>dump</title>
-  <link rel="manifest" href="manifest.json">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#05060d">
+<title>Gravity Wells</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #05060d; color: #e6ecff;
+    font-family: -apple-system, system-ui, sans-serif;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    overscroll-behavior: none;
+  }
+  #game { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  .hud {
+    position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0);
+    padding: 12px 16px; display: flex; justify-content: space-between;
+    pointer-events: none; font-size: 14px; letter-spacing: .08em;
+    text-transform: uppercase; text-shadow: 0 0 8px #000;
+  }
+  .hud b { color: #7df9ff; font-weight: 600; }
+  .panel {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at center, rgba(10,12,30,.85), rgba(0,0,0,.95));
+    padding: 24px; text-align: center; backdrop-filter: blur(4px);
+  }
+  .panel.hidden { display: none; }
+  .card { max-width: 360px; }
+  h1 {
+    margin: 0 0 8px; font-size: 32px; letter-spacing: .12em;
+    background: linear-gradient(90deg,#7df9ff,#c08bff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  p { margin: 8px 0 16px; font-size: 15px; line-height: 1.5; opacity: .85; }
+  button {
+    appearance: none; border: 1px solid #7df9ff; background: rgba(125,249,255,.08);
+    color: #7df9ff; font: inherit; font-size: 16px; letter-spacing: .1em;
+    text-transform: uppercase; padding: 14px 28px; border-radius: 999px;
+    cursor: pointer; touch-action: manipulation;
+  }
+  button:active { transform: scale(.96); }
+  .hint { margin-top: 14px; font-size: 12px; opacity: .55; }
+</style>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+<canvas id="game"></canvas>
+<div class="hud">
+  <div>Level <b id="lvl">1</b></div>
+  <div>Best <b id="best">0</b></div>
+</div>
+<div id="panel" class="panel">
+  <div class="card">
+    <h1>GRAVITY WELLS</h1>
+    <p>Drag from the <b style="color:#7df9ff">ship</b> to aim, release to launch. Slingshot around planets to reach the <b style="color:#ffd479">goal</b>. Avoid crashing.</p>
+    <button id="start">Play</button>
+    <div class="hint">Tap planets before launch to flip their gravity</div>
+  </div>
+</div>
+<script>
+(() => {
+  const cvs = document.getElementById('game');
+  const ctx = cvs.getContext('2d');
+  const panel = document.getElementById('panel');
+  const startBtn = document.getElementById('start');
+  const lvlEl = document.getElementById('lvl');
+  const bestEl = document.getElementById('best');
+
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cvs.width = W * DPR; cvs.height = H * DPR;
+    cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---- stars ----
+  let stars = [];
+  function makeStars() {
+    stars = [];
+    const n = Math.floor((W * H) / 6000);
+    for (let i = 0; i < n; i++) {
+      stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + .2, t: Math.random() * Math.PI * 2 });
+    }
+  }
+  makeStars();
+  window.addEventListener('resize', makeStars);
+
+  // ---- game state ----
+  let level = 1;
+  let best = parseInt(localStorage.getItem('gw_best') || '0', 10);
+  bestEl.textContent = best;
+
+  let ship, goal, planets, particles, trail;
+  let aiming = false, aimStart = null, aimNow = null;
+  let flying = false;
+  let crashed = false, won = false;
+  let shake = 0;
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function buildLevel() {
+    const minSide = Math.min(W, H);
+    const margin = minSide * 0.12;
+    ship = { x: margin + rand(0, minSide * 0.1), y: H - margin - rand(0, minSide * 0.1), vx: 0, vy: 0, r: 7 };
+    goal = { x: W - margin - rand(0, minSide * 0.1), y: margin + rand(0, minSide * 0.1), r: minSide * 0.045 };
+    planets = [];
+    const count = Math.min(2 + Math.floor(level / 2), 6);
+    let tries = 0;
+    while (planets.length < count && tries < 400) {
+      tries++;
+      const r = rand(minSide * 0.04, minSide * 0.08);
+      const x = rand(r + 20, W - r - 20);
+      const y = rand(r + 80, H - r - 80);
+      if (Math.hypot(x - ship.x, y - ship.y) < r + 80) continue;
+      if (Math.hypot(x - goal.x, y - goal.y) < r + goal.r + 30) continue;
+      let ok = true;
+      for (const p of planets) if (Math.hypot(x - p.x, y - p.y) < r + p.r + 30) { ok = false; break; }
+      if (!ok) continue;
+      planets.push({ x, y, r, m: r * r * 0.9, sign: 1, hue: rand(180, 320) });
+    }
+    particles = []; trail = [];
+    flying = false; crashed = false; won = false;
+    aiming = false; aimStart = null; aimNow = null;
+    lvlEl.textContent = level;
+  }
+
+  function reset(toLevel) {
+    if (toLevel != null) level = toLevel;
+    buildLevel();
+  }
+
+  // ---- input ----
+  function getXY(e) {
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX, y: t.clientY };
+  }
+  function onDown(e) {
+    e.preventDefault();
+    if (won || crashed) { reset(won ? level + 1 : level); return; }
+    if (flying) return;
+    const p = getXY(e);
+    // tap planet to flip gravity
+    for (const pl of planets) {
+      if (Math.hypot(p.x - pl.x, p.y - pl.y) < pl.r + 14) {
+        pl.sign *= -1;
+        return;
+      }
+    }
+    if (Math.hypot(p.x - ship.x, p.y - ship.y) < 60) {
+      aiming = true; aimStart = { x: ship.x, y: ship.y }; aimNow = p;
+    }
+  }
+  function onMove(e) {
+    if (!aiming) return;
+    e.preventDefault();
+    aimNow = getXY(e);
+  }
+  function onUp(e) {
+    if (!aiming) return;
+    e.preventDefault();
+    const dx = aimStart.x - aimNow.x;
+    const dy = aimStart.y - aimNow.y;
+    const mag = Math.hypot(dx, dy);
+    aiming = false;
+    if (mag < 8) return;
+    const power = Math.min(mag, 160) * 0.05;
+    const ang = Math.atan2(dy, dx);
+    ship.vx = Math.cos(ang) * power;
+    ship.vy = Math.sin(ang) * power;
+    flying = true;
+  }
+  cvs.addEventListener('touchstart', onDown, { passive: false });
+  cvs.addEventListener('touchmove', onMove, { passive: false });
+  cvs.addEventListener('touchend', onUp, { passive: false });
+  cvs.addEventListener('mousedown', onDown);
+  cvs.addEventListener('mousemove', onMove);
+  cvs.addEventListener('mouseup', onUp);
+
+  startBtn.addEventListener('click', () => {
+    panel.classList.add('hidden');
+    reset(1);
+  });
+
+  // ---- physics ----
+  function step(dt) {
+    if (!flying) return;
+    // gravity from planets
+    let ax = 0, ay = 0;
+    for (const p of planets) {
+      const dx = p.x - ship.x, dy = p.y - ship.y;
+      const d2 = dx * dx + dy * dy;
+      const d = Math.sqrt(d2);
+      if (d < p.r + ship.r) { crash(); return; }
+      const f = (p.m * p.sign) / Math.max(d2, 100);
+      ax += (dx / d) * f;
+      ay += (dy / d) * f;
+    }
+    ship.vx += ax * dt;
+    ship.vy += ay * dt;
+    ship.x += ship.vx * dt;
+    ship.y += ship.vy * dt;
+    trail.push({ x: ship.x, y: ship.y, life: 1 });
+    if (trail.length > 120) trail.shift();
+    if (ship.x < -20 || ship.x > W + 20 || ship.y < -20 || ship.y > H + 20) crash();
+    if (Math.hypot(ship.x - goal.x, ship.y - goal.y) < goal.r + ship.r) win();
+  }
+
+  function crash() {
+    if (crashed || won) return;
+    crashed = true; flying = false; shake = 12;
+    for (let i = 0; i < 30; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = rand(1, 4);
+      particles.push({ x: ship.x, y: ship.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, hue: 10 });
+    }
+  }
+  function win() {
+    if (won || crashed) return;
+    won = true; flying = false;
+    for (let i = 0; i < 50; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = rand(1, 5);
+      particles.push({ x: goal.x, y: goal.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1, hue: 50 });
+    }
+    if (level > best) { best = level; localStorage.setItem('gw_best', best); bestEl.textContent = best; }
+  }
+
+  // ---- render ----
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 16.67, 2);
+    last = now;
+
+    // update
+    for (let i = 0; i < 2; i++) step(dt / 2);
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vx *= .96; p.vy *= .96; p.life -= .02; }
+    particles = particles.filter(p => p.life > 0);
+    for (const t of trail) t.life -= .01;
+    if (shake > 0) shake *= .85;
+
+    // draw
+    ctx.save();
+    if (shake > .2) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+    ctx.fillStyle = '#05060d';
+    ctx.fillRect(0, 0, W, H);
+
+    // stars
+    for (const s of stars) {
+      s.t += .02;
+      const a = .4 + Math.sin(s.t) * .3;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#cdd6ff';
+      ctx.fillRect(s.x, s.y, s.r, s.r);
+    }
+    ctx.globalAlpha = 1;
+
+    // goal
+    const gp = (Math.sin(now / 300) + 1) / 2;
+    ctx.beginPath();
+    const gg = ctx.createRadialGradient(goal.x, goal.y, 0, goal.x, goal.y, goal.r * 2.5);
+    gg.addColorStop(0, `rgba(255,212,121,${.6 + gp * .3})`);
+    gg.addColorStop(1, 'rgba(255,212,121,0)');
+    ctx.fillStyle = gg;
+    ctx.arc(goal.x, goal.y, goal.r * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.fillStyle = '#ffd479';
+    ctx.arc(goal.x, goal.y, goal.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // planets
+    for (const p of planets) {
+      const col = p.sign > 0 ? `hsl(${p.hue},70%,60%)` : `hsl(${p.hue},70%,40%)`;
+      const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 2.2);
+      grd.addColorStop(0, col);
+      grd.addColorStop(.5, `hsla(${p.hue},70%,40%,.4)`);
+      grd.addColorStop(1, 'transparent');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      // sign indicator
+      ctx.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x - p.r * .35, p.y);
+      ctx.lineTo(p.x + p.r * .35, p.y);
+      if (p.sign > 0) {
+        ctx.moveTo(p.x, p.y - p.r * .35);
+        ctx.lineTo(p.x, p.y + p.r * .35);
+      }
+      ctx.stroke();
+    }
+
+    // trail
+    ctx.lineWidth = 2;
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1], b = trail[i];
+      ctx.strokeStyle = `rgba(125,249,255,${b.life * .6})`;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    // ship
+    if (!crashed) {
+      ctx.save();
+      ctx.translate(ship.x, ship.y);
+      const ang = flying ? Math.atan2(ship.vy, ship.vx) : -Math.PI / 4;
+      ctx.rotate(ang);
+      ctx.fillStyle = '#7df9ff';
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-7, 6);
+      ctx.lineTo(-4, 0);
+      ctx.lineTo(-7, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowColor = '#7df9ff'; ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // aim line
+    if (aiming && aimStart && aimNow) {
+      const dx = aimStart.x - aimNow.x, dy = aimStart.y - aimNow.y;
+      const mag = Math.min(Math.hypot(dx, dy), 160);
+      const ang = Math.atan2(dy, dx);
+      const ex = ship.x + Math.cos(ang) * mag;
+      const ey = ship.y + Math.sin(ang) * mag;
+      ctx.strokeStyle = `rgba(125,249,255,${.3 + (mag / 160) * .6})`;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(ship.x, ship.y);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // particles
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = `hsl(${p.hue},90%,60%)`;
+      ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+    }
+    ctx.globalAlpha = 1;
+
+    // overlays
+    if (won || crashed) {
+      ctx.fillStyle = won ? 'rgba(255,212,121,.9)' : 'rgba(255,120,120,.9)';
+      ctx.font = '600 28px -apple-system, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(won ? 'NICE FLYING' : 'CRASHED', W / 2, H / 2 - 10);
+      ctx.font = '14px -apple-system, system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(230,236,255,.8)';
+      ctx.fillText(won ? 'tap for next level' : 'tap to retry', W / 2, H / 2 + 16);
+    }
+
+    ctx.restore();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
 </body>
 </html>
