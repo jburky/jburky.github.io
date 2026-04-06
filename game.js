@@ -613,33 +613,81 @@
     let vx = Math.cos(ang) * power;
     let vy = Math.sin(ang) * power;
 
-    ctx.save();
-    ctx.strokeStyle = 'rgba(192,139,255,0.65)';
-    ctx.lineWidth = 1.8;
-    ctx.setLineDash([4, 6]);
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    for (let i = 0; i < 70; i++) {
+    // Simulate forward using the same half-step as the real physics loop
+    // (step is called twice per frame with dt/2, so each iteration here = one half-step).
+    const MAX_STEPS = 260;
+    const points = [{ x: px, y: py }];
+    let outcome = 'none'; // 'crash' | 'goal' | 'offscreen' | 'none'
+    for (let i = 0; i < MAX_STEPS; i++) {
       let ax = 0;
       let ay = 0;
+      let hit = false;
       for (const p of planets) {
         const gx = p.x - px;
         const gy = p.y - py;
-        const d2 = Math.max(gx * gx + gy * gy, 100);
+        const d2 = gx * gx + gy * gy;
         const d = Math.sqrt(d2);
-        const f = (p.m * p.sign) / d2;
+        if (d < p.r + ship.r) {
+          hit = true;
+          break;
+        }
+        const f = (p.m * p.sign) / Math.max(d2, 100);
         ax += (gx / d) * f;
         ay += (gy / d) * f;
+      }
+      if (hit) {
+        outcome = 'crash';
+        break;
       }
       vx += ax * 0.5;
       vy += ay * 0.5;
       px += vx * 0.5;
       py += vy * 0.5;
-      if (px < -30 || px > W + 30 || py < -30 || py > H + 30) break;
-      ctx.lineTo(px, py);
+      points.push({ x: px, y: py });
+      if (Math.hypot(px - goal.x, py - goal.y) < goal.r + ship.r) {
+        outcome = 'goal';
+        break;
+      }
+      if (px < -30 || px > W + 30 || py < -30 || py > H + 30) {
+        outcome = 'offscreen';
+        break;
+      }
     }
-    ctx.stroke();
-    ctx.setLineDash([]);
+
+    // Draw path with fading alpha along its length
+    ctx.save();
+    ctx.lineWidth = 2;
+    const baseColor = outcome === 'goal' ? '255,212,121' : '125,249,255';
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      const t = i / points.length;
+      const alpha = (1 - t) * 0.55 + 0.15;
+      ctx.strokeStyle = `rgba(${baseColor},${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    // Endpoint marker
+    const last = points[points.length - 1];
+    if (outcome === 'goal') {
+      ctx.strokeStyle = 'rgba(255,212,121,0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 10, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (outcome === 'crash') {
+      ctx.strokeStyle = 'rgba(255,120,120,0.9)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(last.x - 6, last.y - 6);
+      ctx.lineTo(last.x + 6, last.y + 6);
+      ctx.moveTo(last.x + 6, last.y - 6);
+      ctx.lineTo(last.x - 6, last.y + 6);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
