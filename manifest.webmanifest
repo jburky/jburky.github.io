@@ -1,0 +1,17 @@
+{
+  "name": "Gravity Wells",
+  "short_name": "GravityWells",
+  "description": "Arcade gravity slingshot game.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#05060d",
+  "theme_color": "#05060d",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='28' fill='%2305060d'/%3E%3Ccircle cx='132' cy='60' r='20' fill='%23ffd479'/%3E%3Ccircle cx='80' cy='112' r='40' fill='%237df9ff'/%3E%3Cpath d='M30 150 L84 118 L70 106 Z' fill='white'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
