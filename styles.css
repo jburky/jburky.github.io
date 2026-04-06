@@ -78,6 +78,18 @@ button:focus-visible {
   outline: 2px solid #ffd479;
   outline-offset: 2px;
 }
+.version {
+  position: fixed;
+  left: 14px;
+  bottom: calc(env(safe-area-inset-bottom, 0) + 14px);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.35;
+  font-family: ui-monospace, Menlo, monospace;
+  pointer-events: none;
+  color: #7df9ff;
+}
 .icon-btn.subtle {
   opacity: 0.35;
   border-color: rgba(125, 249, 255, 0.2);

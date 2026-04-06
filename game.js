@@ -26,10 +26,28 @@
         cache: 'no-store',
       });
       if (!resp.ok) return null;
-      return resp.headers.get('etag') || resp.headers.get('last-modified') || null;
+      return {
+        etag: resp.headers.get('etag'),
+        lastModified: resp.headers.get('last-modified'),
+        key: resp.headers.get('etag') || resp.headers.get('last-modified') || null,
+      };
     } catch {
       return null;
     }
+  }
+
+  const versionEl = document.getElementById('version');
+  function formatVersion(headers) {
+    if (!headers) return 'v?';
+    if (headers.lastModified) {
+      const d = new Date(headers.lastModified);
+      if (!isNaN(d)) {
+        const pad = (n) => String(n).padStart(2, '0');
+        return `v${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+    }
+    if (headers.etag) return 'v' + headers.etag.replace(/[^a-f0-9]/gi, '').slice(0, 7);
+    return 'v?';
   }
 
   function setReloadState(state) {
@@ -50,12 +68,13 @@
 
   async function checkForUpdate() {
     const current = await fetchVersionHeaders();
-    if (!current) return;
+    if (!current || !current.key) return;
     if (versionBaseline === null) {
-      versionBaseline = current;
+      versionBaseline = current.key;
+      if (versionEl) versionEl.textContent = formatVersion(current);
       return;
     }
-    if (current !== versionBaseline && !updateAvailable) {
+    if (current.key !== versionBaseline && !updateAvailable) {
       updateAvailable = true;
       setReloadState('update-ready');
     }
