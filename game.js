@@ -78,12 +78,10 @@
   if (reloadBtn) {
     setReloadState('subtle');
     reloadBtn.addEventListener('click', async () => {
-      if (updateAvailable) {
-        const ok = confirm(
-          'A new version of Gravity Wells is available.\n\nReload now? Your current run will be lost.'
-        );
-        if (!ok) return;
-      }
+      const msg = updateAvailable
+        ? 'A new version of Gravity Wells is available.\n\nReload now? Your current run will be lost.'
+        : 'Reload the page? Your current run will be lost.';
+      if (!confirm(msg)) return;
       await doReload();
     });
     checkForUpdate();
