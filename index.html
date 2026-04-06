@@ -131,9 +131,31 @@
     lvlEl.textContent = level;
   }
 
-  function reset(toLevel) {
+  let savedLayout = null;
+  function snapshot() {
+    savedLayout = {
+      ship: { x: ship.x, y: ship.y },
+      goal: { x: goal.x, y: goal.y, r: goal.r },
+      planets: planets.map(p => ({ ...p })),
+    };
+  }
+  function restoreLayout() {
+    ship = { x: savedLayout.ship.x, y: savedLayout.ship.y, vx: 0, vy: 0, r: 7 };
+    goal = { ...savedLayout.goal };
+    planets = savedLayout.planets.map(p => ({ ...p }));
+    particles = []; trail = [];
+    flying = false; crashed = false; won = false;
+    aiming = false; aimStart = null; aimNow = null;
+    lvlEl.textContent = level;
+  }
+  function reset(toLevel, regen) {
     if (toLevel != null) level = toLevel;
-    buildLevel();
+    if (regen || !savedLayout) {
+      buildLevel();
+      snapshot();
+    } else {
+      restoreLayout();
+    }
   }
 
   // ---- input ----
@@ -143,7 +165,7 @@
   }
   function onDown(e) {
     e.preventDefault();
-    if (won || crashed) { reset(won ? level + 1 : level); return; }
+    if (won || crashed) { reset(won ? level + 1 : level, won); return; }
     if (flying) return;
     const p = getXY(e);
     // tap planet to flip gravity
@@ -185,7 +207,7 @@
 
   startBtn.addEventListener('click', () => {
     panel.classList.add('hidden');
-    reset(1);
+    reset(1, true);
   });
 
   // ---- physics ----
@@ -372,7 +394,7 @@
     ctx.restore();
     requestAnimationFrame(frame);
   }
-  reset(1);
+  reset(1, true);
   requestAnimationFrame(frame);
 })();
 </script>
