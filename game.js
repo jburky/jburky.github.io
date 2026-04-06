@@ -129,6 +129,7 @@
 
   let ship, goal, planets, particles, trail, ghosts;
   let aiming = false;
+  let aimStart = null;
   let aimNow = null;
   let flying = false;
   let crashed = false;
@@ -201,6 +202,7 @@
     crashed = false;
     won = false;
     aiming = false;
+    aimStart = null;
     aimNow = null;
     lvlEl.textContent = level;
     attempts = 0;
@@ -230,6 +232,7 @@
     crashed = false;
     won = false;
     aiming = false;
+    aimStart = null;
     aimNow = null;
     lvlEl.textContent = level;
     announce(`Attempt ${attempts + 1}`);
@@ -282,7 +285,6 @@
     e.preventDefault();
     if (won || crashed) {
       reset(won ? level + 1 : level, won);
-      return;
     }
     if (flying) return;
     if (tryFlipPlanet(e.clientX, e.clientY)) return;
@@ -290,6 +292,7 @@
     pointerId = e.pointerId;
     keyboardMode = false;
     aiming = true;
+    aimStart = { x: e.clientX, y: e.clientY };
     aimNow = { x: e.clientX, y: e.clientY };
     launchVector = { x: 0, y: 0 };
     cvs.setPointerCapture(pointerId);
@@ -299,13 +302,14 @@
     if (!aiming || pointerId !== e.pointerId) return;
     e.preventDefault();
     aimNow = { x: e.clientX, y: e.clientY };
-    launchVector = { x: ship.x - aimNow.x, y: ship.y - aimNow.y };
+    launchVector = { x: aimStart.x - aimNow.x, y: aimStart.y - aimNow.y };
   }
 
   function onPointerUp(e) {
     if (!aiming || pointerId !== e.pointerId) return;
     e.preventDefault();
     aiming = false;
+    aimStart = null;
     pointerId = null;
     launch(launchVector.x, launchVector.y);
     launchVector = { x: 0, y: 0 };
@@ -314,6 +318,7 @@
   function onPointerCancel(e) {
     if (pointerId !== e.pointerId) return;
     aiming = false;
+    aimStart = null;
     pointerId = null;
     launchVector = { x: 0, y: 0 };
   }
