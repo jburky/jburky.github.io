@@ -727,7 +727,7 @@
 
     // Simulate forward using the same half-step as the real physics loop
     // (step is called twice per frame with dt/2, so each iteration here = one half-step).
-    const MAX_STEPS = 110;
+    const MAX_STEPS = 55;
     const points = [{ x: px, y: py }];
     let outcome = 'none'; // 'crash' | 'goal' | 'offscreen' | 'none'
     for (let i = 0; i < MAX_STEPS; i++) {
