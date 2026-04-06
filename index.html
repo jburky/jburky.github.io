@@ -134,7 +134,7 @@
       let ok = true;
       for (const p of planets) if (Math.hypot(x - p.x, y - p.y) < r + p.r + 30) { ok = false; break; }
       if (!ok) continue;
-      planets.push({ x, y, r, m: r * r * 0.9, sign: 1, hue: rand(180, 320) });
+      planets.push({ x, y, r, m: r * r * 0.9, sign: Math.random() < 0.3 ? -1 : 1, hue: rand(180, 320) });
     }
     particles = []; trail = []; ghosts = [];
     flying = false; crashed = false; won = false;
@@ -188,6 +188,10 @@
     for (const pl of planets) {
       if (Math.hypot(p.x - pl.x, p.y - pl.y) < pl.r + 14) {
         pl.sign *= -1;
+        if (savedLayout) {
+          const sp = savedLayout.planets.find(s => s.x === pl.x && s.y === pl.y);
+          if (sp) sp.sign = pl.sign;
+        }
         return;
       }
     }
@@ -345,7 +349,7 @@
     // ghost trails (previous attempts)
     ctx.lineWidth = 1.5;
     for (let g = 0; g < ghosts.length; g++) {
-      const fade = 0.08 + (g / ghosts.length) * 0.12;
+      const fade = 0.25 + (g / ghosts.length) * 0.35;
       ctx.strokeStyle = `rgba(192,139,255,${fade})`;
       ctx.beginPath();
       const path = ghosts[g];
