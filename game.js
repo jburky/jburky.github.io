@@ -805,21 +805,6 @@
 
     drawPredictedPath();
 
-    if ((aiming || keyboardMode) && Math.hypot(launchVector.x, launchVector.y) > 4) {
-      const mag = Math.min(Math.hypot(launchVector.x, launchVector.y), 160);
-      const ang = Math.atan2(launchVector.y, launchVector.x);
-      const ex = ship.x + Math.cos(ang) * mag;
-      const ey = ship.y + Math.sin(ang) * mag;
-      ctx.strokeStyle = `rgba(125,249,255,${0.3 + (mag / 160) * 0.6})`;
-      ctx.lineWidth = 3;
-      ctx.setLineDash([6, 6]);
-      ctx.beginPath();
-      ctx.moveTo(ship.x, ship.y);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
     for (const p of particles) {
       ctx.globalAlpha = p.life;
       ctx.fillStyle = `hsl(${p.hue},90%,60%)`;
