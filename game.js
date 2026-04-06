@@ -11,6 +11,22 @@
   const srStatus = document.getElementById('sr-status');
   const restartBtn = document.getElementById('restart');
   const muteBtn = document.getElementById('mute');
+  const reloadBtn = document.getElementById('reload');
+  if (reloadBtn) {
+    reloadBtn.addEventListener('click', async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister()));
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((k) => caches.delete(k)));
+        }
+      } catch (_) {}
+      location.href = location.pathname + '?v=' + Date.now();
+    });
+  }
   const dailySeedCheckbox = document.getElementById('daily-seed');
 
   // ---- storage ----
@@ -695,13 +711,15 @@
     requestAnimationFrame(frame);
   }
 
-  // ---- pwa ----
+  // Unregister any previously-installed service worker and clear caches
+  // so updates always propagate (no-cache policy).
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {
-        // No-op if service worker fails.
-      });
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((r) => r.unregister());
     });
+  }
+  if ('caches' in window) {
+    caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
   }
 
   reset(1, true);
