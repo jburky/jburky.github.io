@@ -247,8 +247,107 @@
   }
   updateMetricsUi();
 
-  function buildLevel() {
-    seededRandom(level * 1009);
+  // ---- solver: verify a layout is beatable via Monte Carlo ----
+  // Mirrors the real physics step (half-step increments, same gravity formula).
+  function simulateShot(sx, sy, ang, power, pls, gx, gy, gr) {
+    const shipR = 7;
+    let x = sx;
+    let y = sy;
+    let vx = Math.cos(ang) * power;
+    let vy = Math.sin(ang) * power;
+    const MAX = 300;
+    for (let i = 0; i < MAX; i++) {
+      let ax = 0;
+      let ay = 0;
+      for (const p of pls) {
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const d2 = dx * dx + dy * dy;
+        const d = Math.sqrt(d2);
+        if (d < p.r + shipR) return 'crash';
+        const f = (p.m * p.sign) / Math.max(d2, 100);
+        ax += (dx / d) * f;
+        ay += (dy / d) * f;
+      }
+      vx += ax * 0.5;
+      vy += ay * 0.5;
+      x += vx * 0.5;
+      y += vy * 0.5;
+      if (Math.hypot(x - gx, y - gy) < gr + shipR) return 'goal';
+      if (x < -30 || x > W + 30 || y < -30 || y > H + 30) return 'off';
+    }
+    return 'timeout';
+  }
+
+  function isSolvable(sx, sy, pls, gx, gy, gr) {
+    const baseAng = Math.atan2(gy - sy, gx - sx);
+    const SAMPLES = 180;
+    for (let i = 0; i < SAMPLES; i++) {
+      let ang;
+      let power;
+      if (i < SAMPLES * 0.6) {
+        // Focused sweep near the straight-line direction to the goal
+        ang = baseAng + (randFn() - 0.5) * Math.PI * 0.8;
+        power = 2 + randFn() * 6;
+      } else {
+        ang = randFn() * Math.PI * 2;
+        power = 1 + randFn() * 7;
+      }
+      if (simulateShot(sx, sy, ang, power, pls, gx, gy, gr) === 'goal') return true;
+    }
+    return false;
+  }
+
+  // Enumerate all 2^n sign combinations, returning the bitmasks that are beatable.
+  function findSolvableMasks(pls, sx, sy, gx, gy, gr) {
+    const n = pls.length;
+    if (n === 0 || n > 6) return [];
+    const solvable = [];
+    const orig = pls.map((p) => p.sign);
+    const max = 1 << n;
+    for (let mask = 0; mask < max; mask++) {
+      for (let i = 0; i < n; i++) {
+        pls[i].sign = mask & (1 << i) ? -1 : 1;
+      }
+      if (isSolvable(sx, sy, pls, gx, gy, gr)) solvable.push(mask);
+    }
+    for (let i = 0; i < n; i++) pls[i].sign = orig[i];
+    return solvable;
+  }
+
+  // Pick the polarity the player starts with.
+  // Early levels: any solvable config. Later levels: prefer a non-solvable
+  // state that is exactly one flip away from a solvable one, so flipping
+  // becomes a required puzzle mechanic.
+  function chooseInitialPolarity(solvableMasks) {
+    const n = planets.length;
+    const max = 1 << n;
+    const solvableSet = new Set(solvableMasks);
+    let chosen;
+    if (level >= 3) {
+      const oneFlipFromSolvable = [];
+      for (let mask = 0; mask < max; mask++) {
+        if (solvableSet.has(mask)) continue;
+        for (let i = 0; i < n; i++) {
+          if (solvableSet.has(mask ^ (1 << i))) {
+            oneFlipFromSolvable.push(mask);
+            break;
+          }
+        }
+      }
+      if (oneFlipFromSolvable.length > 0) {
+        chosen = oneFlipFromSolvable[Math.floor(randFn() * oneFlipFromSolvable.length)];
+      }
+    }
+    if (chosen === undefined) {
+      chosen = solvableMasks[Math.floor(randFn() * solvableMasks.length)];
+    }
+    for (let i = 0; i < n; i++) {
+      planets[i].sign = chosen & (1 << i) ? -1 : 1;
+    }
+  }
+
+  function generateLayoutCandidate() {
     const minSide = Math.min(W, H);
     const margin = minSide * 0.12;
     ship = {
@@ -291,6 +390,20 @@
         sign: randFn() < 0.3 ? -1 : 1,
         hue: rand(180, 320),
       });
+    }
+  }
+
+  function buildLevel() {
+    seededRandom(level * 1009);
+    const MAX_LAYOUT_TRIES = 15;
+    let solvableMasks = [];
+    for (let attempt = 0; attempt < MAX_LAYOUT_TRIES; attempt++) {
+      generateLayoutCandidate();
+      solvableMasks = findSolvableMasks(planets, ship.x, ship.y, goal.x, goal.y, goal.r);
+      if (solvableMasks.length > 0) break;
+    }
+    if (solvableMasks.length > 0) {
+      chooseInitialPolarity(solvableMasks);
     }
     particles = [];
     trail = [];
