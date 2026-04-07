@@ -466,14 +466,11 @@
     beep(280, 70, 'triangle', 0.03);
   }
 
-  function tryFlipPlanet(x, y) {
+  function findPlanetAt(x, y) {
     for (const pl of planets) {
-      if (Math.hypot(x - pl.x, y - pl.y) < pl.r + 14) {
-        setPlanetSign(pl);
-        return true;
-      }
+      if (Math.hypot(x - pl.x, y - pl.y) < pl.r + 14) return pl;
     }
-    return false;
+    return null;
   }
 
   function launch(dx, dy) {
@@ -490,6 +487,10 @@
   }
 
   // ---- pointer input ----
+  const TAP_SLOP = 8; // px — below this, a pointer down+up counts as a tap
+  let pendingTapPlanet = null;
+  let movedPastSlop = false;
+
   function onPointerDown(e) {
     if (e.button != null && e.button !== 0) return;
     e.preventDefault();
@@ -497,7 +498,6 @@
       reset(won ? level + 1 : level, won);
     }
     if (flying) return;
-    if (tryFlipPlanet(e.clientX, e.clientY)) return;
 
     pointerId = e.pointerId;
     keyboardMode = false;
@@ -505,6 +505,8 @@
     aimStart = { x: e.clientX, y: e.clientY };
     aimNow = { x: e.clientX, y: e.clientY };
     launchVector = { x: 0, y: 0 };
+    pendingTapPlanet = findPlanetAt(e.clientX, e.clientY);
+    movedPastSlop = false;
     cvs.setPointerCapture(pointerId);
   }
 
@@ -512,6 +514,9 @@
     if (!aiming || pointerId !== e.pointerId) return;
     e.preventDefault();
     aimNow = { x: e.clientX, y: e.clientY };
+    if (!movedPastSlop && Math.hypot(aimNow.x - aimStart.x, aimNow.y - aimStart.y) > TAP_SLOP) {
+      movedPastSlop = true;
+    }
     launchVector = { x: aimStart.x - aimNow.x, y: aimStart.y - aimNow.y };
   }
 
@@ -521,6 +526,14 @@
     aiming = false;
     aimStart = null;
     pointerId = null;
+    // Tap (no drag) on a planet → flip its polarity instead of launching.
+    if (!movedPastSlop && pendingTapPlanet) {
+      setPlanetSign(pendingTapPlanet);
+      pendingTapPlanet = null;
+      launchVector = { x: 0, y: 0 };
+      return;
+    }
+    pendingTapPlanet = null;
     launch(launchVector.x, launchVector.y);
     launchVector = { x: 0, y: 0 };
   }
@@ -530,6 +543,7 @@
     aiming = false;
     aimStart = null;
     pointerId = null;
+    pendingTapPlanet = null;
     launchVector = { x: 0, y: 0 };
   }
 
