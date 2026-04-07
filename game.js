@@ -228,6 +228,52 @@
   let hintSolution = null; // { targetMask, angle, power }
   const HINT1_AT = 4;
   const HINT2_AT = 10;
+
+  // ---- daily progress save/restore ----
+  const DAILY_SAVE_KEY = 'gw_daily_save';
+  const DAILY_SAVE_VERSION = 1;
+
+  function saveDailyProgress() {
+    if (!useDailySeed) return;
+    if (!planets || planets.length === 0) return;
+    // Encode current planet signs as a bitmask (bit i = 1 means sign is -1)
+    let signMask = 0;
+    for (let i = 0; i < planets.length; i++) {
+      if (planets[i].sign === -1) signMask |= 1 << i;
+    }
+    const payload = {
+      v: DAILY_SAVE_VERSION,
+      date: nowDate,
+      level,
+      signMask,
+      levelCrashes,
+      hintLevel,
+      attempts,
+      streak,
+    };
+    try {
+      safeSet(DAILY_SAVE_KEY, JSON.stringify(payload));
+    } catch (_) {}
+  }
+
+  function loadDailyProgress() {
+    try {
+      const raw = safeGet(DAILY_SAVE_KEY, null);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data || data.v !== DAILY_SAVE_VERSION) return null;
+      if (data.date !== nowDate) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearDailyProgress() {
+    try {
+      safeSet(DAILY_SAVE_KEY, '');
+    } catch (_) {}
+  }
   bestEl.textContent = best;
   crashesEl.textContent = crashesTotal;
 
@@ -282,6 +328,7 @@
         hintLevel = 0;
       }
       updateHintButton();
+      saveDailyProgress();
     });
   }
 
@@ -483,6 +530,7 @@
     attempts = 0;
     updateMetricsUi();
     announce(`Level ${level} ready`);
+    saveDailyProgress();
   }
 
   let savedLayout = null;
@@ -529,6 +577,7 @@
       if (sp) sp.sign = planet.sign;
     }
     beep(280, 70, 'triangle', 0.03);
+    saveDailyProgress();
   }
 
   function findPlanetAt(x, y) {
@@ -695,9 +744,12 @@
   });
 
   function hardRestart() {
+    clearDailyProgress();
     level = 1;
     streak = 0;
     attempts = 0;
+    levelCrashes = 0;
+    hintLevel = 0;
     reset(1, true);
     announce('Run restarted');
     updateMetricsUi();
@@ -747,6 +799,7 @@
     safeSet('gw_crashes_total', String(crashesTotal));
     updateMetricsUi();
     updateHintButton();
+    saveDailyProgress();
     announce('Crashed. Press space or tap to retry.');
     beep(180, 140, 'sawtooth', 0.05);
     for (let i = 0; i < 30; i++) {
@@ -1090,5 +1143,38 @@
   }
 
   reset(1, true);
+
+  // Restore an in-progress daily run if one exists for today.
+  (function restoreDailyIfPossible() {
+    if (!useDailySeed) return;
+    const saved = loadDailyProgress();
+    if (!saved) return;
+    level = saved.level;
+    streak = saved.streak || 0;
+    attempts = saved.attempts || 0;
+    // Rebuild the level deterministically, then overlay saved polarity state.
+    buildLevel();
+    if (typeof saved.signMask === 'number') {
+      for (let i = 0; i < planets.length; i++) {
+        const shouldBeNegative = (saved.signMask >> i) & 1;
+        const isNegative = planets[i].sign === -1 ? 1 : 0;
+        if (shouldBeNegative !== isNegative) planets[i].sign *= -1;
+      }
+      // Re-snapshot so retry-restore keeps the overlaid signs.
+      savedLayout = {
+        ship: { x: ship.x, y: ship.y },
+        goal: { x: goal.x, y: goal.y, r: goal.r },
+        planets: planets.map((p) => ({ ...p })),
+      };
+    }
+    levelCrashes = saved.levelCrashes || 0;
+    hintLevel = saved.hintLevel || 0;
+    updateMetricsUi();
+    updateHintButton();
+    announce(`Resumed daily level ${level}`);
+    // Re-save now that the in-memory state matches what we restored.
+    saveDailyProgress();
+  })();
+
   requestAnimationFrame(frame);
 })();
