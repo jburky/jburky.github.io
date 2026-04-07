@@ -94,6 +94,19 @@ button:focus-visible {
   opacity: 0.35;
   border-color: rgba(125, 249, 255, 0.2);
 }
+.icon-btn.hidden {
+  display: none;
+}
+.hint-btn {
+  color: #ffd479;
+  border-color: rgba(255, 212, 121, 0.45);
+  background: rgba(255, 212, 121, 0.08);
+}
+.hint-btn.stage-2 {
+  border-color: #ffd479;
+  background: rgba(255, 212, 121, 0.18);
+  box-shadow: 0 0 12px rgba(255, 212, 121, 0.35);
+}
 .icon-btn.update-ready {
   color: #ffd479;
   border-color: #ffd479;

@@ -11,6 +11,7 @@
   const srStatus = document.getElementById('sr-status');
   const restartBtn = document.getElementById('restart');
   const muteBtn = document.getElementById('mute');
+  const hintBtn = document.getElementById('hint');
   const reloadBtn = document.getElementById('reload');
   // Version check: HEAD game.js with cache-busting, compare ETag/Last-Modified
   // to baseline captured at page load. Button has three states:
@@ -221,6 +222,12 @@
   let attempts = 0;
   let crashesTotal = parseInt(safeGet('gw_crashes_total', '0'), 10);
   let streak = 0;
+  let levelCrashes = 0;
+  let hintsUsed = parseInt(safeGet('gw_hints_used', '0'), 10);
+  let hintLevel = 0; // 0 = none, 1 = polarity, 2 = polarity + launch vector
+  let hintSolution = null; // { targetMask, angle, power }
+  const HINT1_AT = 4;
+  const HINT2_AT = 10;
   bestEl.textContent = best;
   crashesEl.textContent = crashesTotal;
 
@@ -246,6 +253,37 @@
     streakEl.textContent = streak;
   }
   updateMetricsUi();
+
+  function updateHintButton() {
+    if (!hintBtn) return;
+    const eligible = levelCrashes >= HINT1_AT && hintSolution;
+    hintBtn.classList.toggle('hidden', !eligible);
+    hintBtn.classList.toggle('stage-2', hintLevel >= 1 && levelCrashes >= HINT2_AT);
+    if (hintLevel === 0) hintBtn.textContent = '?';
+    else if (hintLevel === 1) hintBtn.textContent = '?!';
+    else hintBtn.textContent = '!';
+  }
+
+  if (hintBtn) {
+    hintBtn.addEventListener('click', () => {
+      if (!hintSolution || levelCrashes < HINT1_AT) return;
+      // Cycle: 0 -> 1 -> 2 (if unlocked) -> 0
+      if (hintLevel === 0) {
+        hintLevel = 1;
+        hintsUsed += 1;
+        safeSet('gw_hints_used', String(hintsUsed));
+        announce('Hint: planets to flip are highlighted.');
+      } else if (hintLevel === 1 && levelCrashes >= HINT2_AT) {
+        hintLevel = 2;
+        hintsUsed += 1;
+        safeSet('gw_hints_used', String(hintsUsed));
+        announce('Hint: launch direction is shown.');
+      } else {
+        hintLevel = 0;
+      }
+      updateHintButton();
+    });
+  }
 
   // ---- solver: verify a layout is beatable via Monte Carlo ----
   // Mirrors the real physics step (half-step increments, same gravity formula).
@@ -279,23 +317,27 @@
     return 'timeout';
   }
 
-  function isSolvable(sx, sy, pls, gx, gy, gr) {
+  function findWinningShot(sx, sy, pls, gx, gy, gr, samples = 180) {
     const baseAng = Math.atan2(gy - sy, gx - sx);
-    const SAMPLES = 180;
-    for (let i = 0; i < SAMPLES; i++) {
+    for (let i = 0; i < samples; i++) {
       let ang;
       let power;
-      if (i < SAMPLES * 0.6) {
-        // Focused sweep near the straight-line direction to the goal
+      if (i < samples * 0.6) {
         ang = baseAng + (randFn() - 0.5) * Math.PI * 0.8;
         power = 2 + randFn() * 6;
       } else {
         ang = randFn() * Math.PI * 2;
         power = 1 + randFn() * 7;
       }
-      if (simulateShot(sx, sy, ang, power, pls, gx, gy, gr) === 'goal') return true;
+      if (simulateShot(sx, sy, ang, power, pls, gx, gy, gr) === 'goal') {
+        return { ang, power };
+      }
     }
-    return false;
+    return null;
+  }
+
+  function isSolvable(sx, sy, pls, gx, gy, gr) {
+    return findWinningShot(sx, sy, pls, gx, gy, gr) !== null;
   }
 
   // Enumerate all 2^n sign combinations, returning the bitmasks that are beatable.
@@ -323,28 +365,46 @@
     const n = planets.length;
     const max = 1 << n;
     const solvableSet = new Set(solvableMasks);
-    let chosen;
+    let initial;
+    let target;
     if (level >= 3) {
       const oneFlipFromSolvable = [];
       for (let mask = 0; mask < max; mask++) {
         if (solvableSet.has(mask)) continue;
         for (let i = 0; i < n; i++) {
-          if (solvableSet.has(mask ^ (1 << i))) {
-            oneFlipFromSolvable.push(mask);
+          const neighbor = mask ^ (1 << i);
+          if (solvableSet.has(neighbor)) {
+            oneFlipFromSolvable.push({ mask, target: neighbor });
             break;
           }
         }
       }
       if (oneFlipFromSolvable.length > 0) {
-        chosen = oneFlipFromSolvable[Math.floor(randFn() * oneFlipFromSolvable.length)];
+        const pick = oneFlipFromSolvable[Math.floor(randFn() * oneFlipFromSolvable.length)];
+        initial = pick.mask;
+        target = pick.target;
       }
     }
-    if (chosen === undefined) {
-      chosen = solvableMasks[Math.floor(randFn() * solvableMasks.length)];
+    if (initial === undefined) {
+      initial = solvableMasks[Math.floor(randFn() * solvableMasks.length)];
+      target = initial;
     }
     for (let i = 0; i < n; i++) {
-      planets[i].sign = chosen & (1 << i) ? -1 : 1;
+      planets[i].sign = initial & (1 << i) ? -1 : 1;
     }
+    return target;
+  }
+
+  function computeHintSolution(targetMask) {
+    const n = planets.length;
+    const orig = planets.map((p) => p.sign);
+    for (let i = 0; i < n; i++) {
+      planets[i].sign = targetMask & (1 << i) ? -1 : 1;
+    }
+    const shot = findWinningShot(ship.x, ship.y, planets, goal.x, goal.y, goal.r, 400);
+    for (let i = 0; i < n; i++) planets[i].sign = orig[i];
+    if (!shot) return null;
+    return { targetMask, angle: shot.ang, power: shot.power };
   }
 
   function generateLayoutCandidate() {
@@ -402,9 +462,14 @@
       solvableMasks = findSolvableMasks(planets, ship.x, ship.y, goal.x, goal.y, goal.r);
       if (solvableMasks.length > 0) break;
     }
+    hintSolution = null;
     if (solvableMasks.length > 0) {
-      chooseInitialPolarity(solvableMasks);
+      const targetMask = chooseInitialPolarity(solvableMasks);
+      hintSolution = computeHintSolution(targetMask);
     }
+    levelCrashes = 0;
+    hintLevel = 0;
+    updateHintButton();
     particles = [];
     trail = [];
     ghosts = [];
@@ -678,8 +743,10 @@
     shake = 12;
     streak = 0;
     crashesTotal += 1;
+    levelCrashes += 1;
     safeSet('gw_crashes_total', String(crashesTotal));
     updateMetricsUi();
+    updateHintButton();
     announce('Crashed. Press space or tap to retry.');
     beep(180, 140, 'sawtooth', 0.05);
     for (let i = 0; i < 30; i++) {
@@ -725,6 +792,64 @@
   }
 
   // ---- render helpers ----
+  function drawHints(now) {
+    if (!hintSolution || hintLevel === 0 || flying) return;
+    const pulse = 0.55 + 0.35 * Math.sin(now / 240);
+
+    // Hint 1: highlight planets whose current sign differs from the target mask
+    if (hintLevel >= 1) {
+      const target = hintSolution.targetMask;
+      for (let i = 0; i < planets.length; i++) {
+        const currentBit = planets[i].sign === -1 ? 1 : 0;
+        const targetBit = (target >> i) & 1;
+        if (currentBit === targetBit) continue;
+        const p = planets[i];
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,212,121,${pulse})`;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r + 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
+
+    // Hint 2: launch vector arrow from ship
+    if (hintLevel >= 2) {
+      const len = 30 + hintSolution.power * 12; // ~30–130px
+      const ex = ship.x + Math.cos(hintSolution.angle) * len;
+      const ey = ship.y + Math.sin(hintSolution.angle) * len;
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,212,121,${pulse})`;
+      ctx.fillStyle = `rgba(255,212,121,${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(ship.x, ship.y);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Arrowhead
+      const headLen = 10;
+      const headAng = Math.PI / 6;
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(
+        ex - headLen * Math.cos(hintSolution.angle - headAng),
+        ey - headLen * Math.sin(hintSolution.angle - headAng)
+      );
+      ctx.lineTo(
+        ex - headLen * Math.cos(hintSolution.angle + headAng),
+        ey - headLen * Math.sin(hintSolution.angle + headAng)
+      );
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   function drawPredictedPath() {
     if (flying || (!aiming && !keyboardMode)) return;
     const dx = launchVector.x;
@@ -930,6 +1055,7 @@
     }
 
     drawPredictedPath();
+    drawHints(now);
 
     for (const p of particles) {
       ctx.globalAlpha = p.life;
